@@ -3,7 +3,7 @@ Windows_username="Maarten" # case sensitive
 npiperelay_path="/mnt/c/Users/$Windows_username/code/bin/npiperelay.exe"
 SSH_keys_to_add=("id_rsa" "id_ecdsa") # Add a space separated list of keys you want to add from your Windows SSH agent; optional
 
-hook_agent() {
+_hook_agent() {
   export SSH_AUTH_SOCK=$HOME/.ssh/agent.sock
   # Checking if we're already running
   # need `ps -ww` to get non-truncated command for matching
@@ -25,7 +25,7 @@ hook_agent() {
 if [ ! -f "$npiperelay_path" ]; then
   echo "Error! Download and unzip npiperelay from https://github.com/jstarks/npiperelay/releases.\nFinally, add the path to the npiperelay_path variable";
 else
-  hook_agent
+  _hook_agent
 fi
 
 ##
@@ -62,3 +62,4 @@ unset Windows_username
 unset npiperelay_path
 unset Agent_socket_path
 unset SSH_keys_to_add
+unset -f _hook_agent
