@@ -170,6 +170,7 @@ chmod 755 "$KMKCHECK_FILE"
 
 info "Updated $KMKCHECK_FILE"
 
+# Install kmk
 if [ ! -f "$LOCAL_BIN/kmk" ]
 then
     if [ -f "/mnt/c/Users/$USERNAME/Downloads/kmk" ]
@@ -181,6 +182,7 @@ then
     fi
 fi
 
+KMK_USER=$SSH_USER "$LOCAL_BIN/kmk" config write
 
 ### <<< 5. Add $LOCAL_BIN to path >>>
 # Check whether $LOCAL_BIN is already in PATH now
