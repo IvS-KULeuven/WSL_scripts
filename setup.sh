@@ -356,5 +356,7 @@ Make sure it is installed and set it to autostart (right click the icon in the W
 You can find the installer at https://admin.kuleuven.be/icts/services/ssh-cert/ssh-certificates-for-windows"
 fi
 
+echo
+echo
 echo "Please restart your laptop to activate these changes,"
 echo "or at least run 'wsl --shutdown' from PowerShell and wait 10s"
