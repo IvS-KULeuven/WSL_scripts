@@ -65,9 +65,9 @@ if [ "${#missing_packages[@]}" -gt 0 ]; then
     exit 1
 fi
 
-if [ -f "$LOCAL_BIN/kmk" ]
+if [ ! -f "$LOCAL_BIN/kmk" ]
 then
-    if [ -f /mnt/c/Users/$USERNAME/Downloads/kmk ]
+    if [ ! -f /mnt/c/Users/$USERNAME/Downloads/kmk ]
     then
         error "This script needs the KU Leuven kmk binary.
 Please download it from here: https://admin.kuleuven.be/icts/services/ssh-cert/kmk
