@@ -72,6 +72,7 @@ then
         error "This script needs the KU Leuven kmk binary.
 Please download it from here: https://admin.kuleuven.be/icts/services/ssh-cert/kmk
 and save it in your Windows Downloads folder (C:\Users\$USERNAME\Downloads)"
+        exit 1
     fi
 fi
 
