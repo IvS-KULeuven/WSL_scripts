@@ -67,7 +67,7 @@ fi
 
 if [ ! -f "$LOCAL_BIN/kmk" ]
 then
-    if [ ! -f /mnt/c/Users/$USERNAME/Downloads/kmk ]
+    if [ ! -f "/mnt/c/Users/$USERNAME/Downloads/kmk" ]
     then
         error "This script needs the KU Leuven kmk binary.
 Please download it from here: https://admin.kuleuven.be/icts/services/ssh-cert/kmk
@@ -142,7 +142,7 @@ info "Updated ssh config: $SSH_CONFIG_FILE"
 
 
 
-### <<< 4. Add kmk helper scritp >>>
+### <<< 4. Add kmk  and helper script >>>
 # Create ~/.local/bin if needed
 debug "Checking $LOCAL_BIN"
 mkdir -p "$LOCAL_BIN"
@@ -170,6 +170,15 @@ chmod 755 "$KMKCHECK_FILE"
 
 info "Updated $KMKCHECK_FILE"
 
+if [ ! -f "$LOCAL_BIN/kmk" ]
+then
+    if [ -f "/mnt/c/Users/$USERNAME/Downloads/kmk" ]
+        install -m 0755 "/mnt/c/Users/$USERNAME/Downloads/kmk" "$LOCAL_BIN/kmk"
+        info "Installed kmk binary"
+    else
+        error "kmk binary not found at /mnt/c/Users/$USERNAME/Downloads/kmk"
+    fi
+fi
 
 
 ### <<< 5. Add $LOCAL_BIN to path >>>
