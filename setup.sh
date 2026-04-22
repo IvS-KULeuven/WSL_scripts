@@ -65,10 +65,8 @@ if [ "${#missing_packages[@]}" -gt 0 ]; then
     exit 1
 fi
 
-if [ ! -f "$LOCAL_BIN/kmk" ]
-then
-    if [ ! -f "/mnt/c/Users/$USERNAME/Downloads/kmk" ]
-    then
+if [ ! -f "$LOCAL_BIN/kmk" ]; then
+    if [ ! -f "/mnt/c/Users/$USERNAME/Downloads/kmk" ]; then
         error "This script needs the KU Leuven kmk binary.
 Please download it from here: https://admin.kuleuven.be/icts/services/ssh-cert/kmk
 and save it in your Windows Downloads folder (C:\Users\$USERNAME\Downloads)"
@@ -171,10 +169,8 @@ chmod 755 "$KMKCHECK_FILE"
 info "Updated $KMKCHECK_FILE"
 
 # Install kmk
-if [ ! -f "$LOCAL_BIN/kmk" ]
-then
-    if [ -f "/mnt/c/Users/$USERNAME/Downloads/kmk" ]
-    then
+if [ ! -f "$LOCAL_BIN/kmk" ]; then
+    if [ -f "/mnt/c/Users/$USERNAME/Downloads/kmk" ]; then
         install -m 0755 "/mnt/c/Users/$USERNAME/Downloads/kmk" "$LOCAL_BIN/kmk"
         info "Installed kmk binary"
     else
@@ -232,8 +228,7 @@ if [ ! -f "$LOCAL_BIN/npiperelay.exe" ]; then
     tmpdir="$(mktemp -d /tmp/npiperelay.XXXXXX)" || exit 1
     debug "tmpzip = $tmpzip"
     debug "tmpdir = $tmpdir"
-    if curl -Lf -o "$tmpzip" "https://github.com/jstarks/npiperelay/releases/download/v0.1.0/npiperelay_windows_amd64.zip"
-    then
+    if curl -Lf -o "$tmpzip" "https://github.com/jstarks/npiperelay/releases/download/v0.1.0/npiperelay_windows_amd64.zip"; then
         unzip -o "$tmpzip" -d "$tmpdir"
         if [ -f "$tmpdir/npiperelay.exe" ]; then
             install -m 0755 "$tmpdir/npiperelay.exe" "$LOCAL_BIN/npiperelay.exe"
@@ -349,7 +344,6 @@ info "Up to date!"
 echo
 echo "This script requires KU Leuven's CertAgent"
 if powershell.exe -NoProfile -Command "Get-Process CertAgent -ErrorAction SilentlyContinue | Out-Null; if (\$?) { exit 0 } else { exit 1 }"; then
-then
     info "CertAgent.exe is already running on Windows.
 Make sure it is set to autostart (right click the icon in the Windows Tray -> autostart)"
 else
