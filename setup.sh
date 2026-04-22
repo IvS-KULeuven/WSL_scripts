@@ -190,7 +190,7 @@ if [ ! -f "$BASHRC" ]; then
 	info "No $BASHRC found, copying from skel"
         install -m 0644 /etc/skel/.bashrc "$BASHRC"
     else
-        warning "/etc/skel/.bashrc not found. Ignoring..." >&2
+        warn "/etc/skel/.bashrc not found. Ignoring..." >&2
     fi
 fi
 
@@ -250,7 +250,7 @@ if [ ! -f "$LOCAL_BIN/npiperelay.exe" ]; then
             rm -r -- "$tmpdir"
             ;;
         *)
-            warning "Refusing to delete unexpected temporary directory: $tmpdir. Ignoring..." >&2
+            warn "Refusing to delete unexpected temporary directory: $tmpdir. Ignoring..." >&2
             ;;
     esac
     info "Installed npiperelay to $LOCAL_BIN/npiperelay.exe"
@@ -351,7 +351,7 @@ then
     info "CertAgent.exe is already running on Windows.
 Make sure it is set to autostart (right click the icon in the Windows Tray -> autostart)"
 else
-    warning "CertAgent.exe is currently not running on Windows.
+    warn "CertAgent.exe is currently not running on Windows.
 Make sure it is installed and set it to autostart (right click the icon in the Windows Tray -> autostart).
 You can find the installer at https://admin.kuleuven.be/icts/services/ssh-cert/ssh-certificates-for-windows"
 fi
