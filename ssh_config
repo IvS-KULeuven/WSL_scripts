@@ -1,0 +1,11 @@
+host s s.fys.kuleuven.be
+  HostName s.fys.kuleuven.be
+  ForwardAgent yes
+  ServerAliveInterval 240
+  proxycommand /usr/local/bin/kmkcheck %h %p
+Host cluster cluster-last cluster.fys.kuleuven.be cluster-last.fys.kuleuven.be
+  ProxyCommand ssh %r@s /usr/bin/ballast-login %h
+  ForwardAgent yes
+  ForwardX11 yes
+  ServerAliveInterval 240
+  HostKeyAlias cluster.fys.kuleuven.be

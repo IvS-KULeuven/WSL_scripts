@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+trap 'trap - INT; kill -INT -- -$$' INT
+
+echo "Right kmkcheck"
+ssh-add -l >/dev/null 2>&1
+if [ $? -eq 2 ]; then
+  echo "Error: No SSH agent running." >&2
+  exit 1
+fi
+
+valid_until="$(ssh-add -L | grep cert |grep vaultssh | head -n1 | ssh-keygen -L -f /dev/stdin | grep Valid |awk '{print $5}')"
+if [ -z "$valid_until" ] || [ "$(date +%s)" -gt "$(date -d "$valid_until" +%s)" ]
+then
+  kmk
+fi
+
+exec /usr/bin/nc "$1" "$2"
