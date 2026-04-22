@@ -178,7 +178,7 @@ if [ ! -f "$LOCAL_BIN/kmk" ]; then
     fi
 fi
 
-KMK_USER=$SSH_USER "$LOCAL_BIN/kmk" config write
+KMK_USER=$SSH_USER "$LOCAL_BIN/kmk" config write --overwrite
 
 ### <<< 5. Add $LOCAL_BIN to path >>>
 # Check whether $LOCAL_BIN is already in PATH now
