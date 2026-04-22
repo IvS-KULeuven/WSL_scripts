@@ -173,6 +173,7 @@ info "Updated $KMKCHECK_FILE"
 if [ ! -f "$LOCAL_BIN/kmk" ]
 then
     if [ -f "/mnt/c/Users/$USERNAME/Downloads/kmk" ]
+    then
         install -m 0755 "/mnt/c/Users/$USERNAME/Downloads/kmk" "$LOCAL_BIN/kmk"
         info "Installed kmk binary"
     else
