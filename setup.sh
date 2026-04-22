@@ -44,7 +44,7 @@ debug() { log DEBUG   3 "$@"; }
 
 info "=== KU Leuven NS SSH setup for WSL Ubuntu ==="
 
-
+debug "Windows USERNAME = $USERNAME"
 
 ### <<< 0. Software check >>>
 missing_packages=()
@@ -281,7 +281,7 @@ SSH_keys_to_add=()
 _hook_agent() {
   export SSH_AUTH_SOCK=\$HOME/.ssh/agent.sock
   # Checking if we're already running
-  # need `ps -ww` to get non-truncated command for matching
+  # need 'ps -ww' to get non-truncated command for matching
   # use square brackets to generate a regex match for the process we want but that doesn't match the grep command running it!
   ps -auxww | grep -q "[n]piperelay.exe -ei -s //./pipe/openssh-ssh-agent" 2>&1 > /dev/null
   if [[ "\$?" != "0" ]]; then
@@ -346,7 +346,7 @@ info "Updated $BASHRC"
 info "Up to date!"
 echo
 echo "This script requires KU Leuven's CertAgent"
-if tasklist.exe | grep -qi '^CertAgent.exe'
+if powershell.exe -NoProfile -Command "Get-Process CertAgent -ErrorAction SilentlyContinue | Out-Null; if (\$?) { exit 0 } else { exit 1 }"; then
 then
     info "CertAgent.exe is already running on Windows.
 Make sure it is set to autostart (right click the icon in the Windows Tray -> autostart)"
