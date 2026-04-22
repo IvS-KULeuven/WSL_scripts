@@ -18,7 +18,7 @@ LOCAL_BIN="$HOME/.local/bin"
 BASHRC="$HOME/.bashrc"
 SSH_CONFIG_FILE="$HOME/.ssh/config"
 KMKCHECK_FILE="$LOCAL_BIN/kmkcheck"
-
+USERNAME="$(cmd.exe /c "echo %USERNAME%" 2>/dev/null | tr -d '\r')"
 
 ### Loggin functions
 LOG_LEVEL=${LOG_LEVEL:-2}
@@ -298,7 +298,7 @@ fi
 
 # Now that we have an agent, we can load some keys
 # We define which keys we want to import in an array
-SSH_key_location="/mnt/c/Users/\$USERNAME/.ssh"
+SSH_key_location="/mnt/c/Users/$USERNAME/.ssh"
 for key in "\${SSH_keys_to_add[@]}"; do
         # for each, we check if the key is already loaded
         keypath="\$SSH_key_location/\$key"
