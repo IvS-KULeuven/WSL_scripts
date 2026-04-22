@@ -340,7 +340,7 @@ $BLOCK_END
 EOF
 
 mv "$TMP_BASHRC_FILE" "$BASHRC"
-chmod 644
+chmod 644 "$BASHRC"
 info "Updated $BASHRC"
 
 info "Up to date!"
@@ -355,3 +355,6 @@ else
 Make sure it is installed and set it to autostart (right click the icon in the Windows Tray -> autostart).
 You can find the installer at https://admin.kuleuven.be/icts/services/ssh-cert/ssh-certificates-for-windows"
 fi
+
+echo "Please restart your laptop to activate these changes,"
+echo "or at least run 'wsl --shutdown' from PowerShell and wait 10s"
