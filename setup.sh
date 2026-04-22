@@ -5,71 +5,115 @@ set -euo pipefail
 # This script:
 # 0. performs a software check for necessary software and advises otherwise
 # 1. asks for your r-number (or u- or b-number)
-# 2. creates ~/.ssh if needed
+# 2. creates ~/.ssh/config if needed
 # 3. adds host entries to ~/.ssh/config
 # 4. creates a helper command in ~/.local/bin
 # 5. adds ~/.local/bin to PATH in ~/.bashrc if needed
 # 6. downloads npiperelay to communicate with Windows CertAgent
 # 7. sets up the necessary config in ~/.bashrc to make it work
 
-echo
-echo "=== KU Leuven NS SSH setup for WSL Ubuntu ==="
-echo
 
+### Variables:
+LOCAL_BIN="$HOME/.local/bin"
+BASHRC="$HOME/.bashrc"
+SSH_CONFIG_FILE="$HOME/.ssh/config"
+KMKCHECK_FILE="$LOCAL_BIN/kmkcheck"
+
+
+### Loggin functions
+LOG_LEVEL=${LOG_LEVEL:-2}
+# 0 = ERROR
+# 1 = WARNING
+# 2 = INFO
+# 3 = DEBUG
+
+log() {
+    local level_name=$1
+    local level_num=$2
+    shift 2
+
+    (( LOG_LEVEL < level_num )) && return 0
+
+    printf '[%s] %s\n' "$level_name" "$*" >&2
+}
+
+error() { log ERROR   0 "$@"; }
+warn()  { log WARNING 1 "$@"; }
+info()  { log INFO    2 "$@"; }
+debug() { log DEBUG   3 "$@"; }
+
+info "=== KU Leuven NS SSH setup for WSL Ubuntu ==="
+
+
+
+### <<< 0. Software check >>>
 missing_packages=()
 
 command -v nc >/dev/null 2>&1 || missing_packages+=("netcat-openbsd")
+command -v awk >/dev/null 2>&1 || missing_packages+=("gawk")
 command -v socat >/dev/null 2>&1 || missing_packages+=("socat")
 command -v curl >/dev/null 2>&1 || missing_packages+=("curl")
 command -v unzip >/dev/null 2>&1 || missing_packages+=("unzip")
 command -v ssh >/dev/null 2>&1 || missing_packages+=("openssh-client")
 
 if [ "${#missing_packages[@]}" -gt 0 ]; then
-    echo "This script needs some Ubuntu packages that are not installed yet."
-    echo
-    echo "Run this command, then start the script again:"
+    error "This script needs some Ubuntu packages that are not installed yet."
+    error "Run this command, then start the script again:"
     printf 'sudo apt update && sudo apt install -y'
     printf ' %q' "${missing_packages[@]}"
     printf '\n'
     exit 1
 fi
 
+if [ -f "$LOCAL_BIN/kmk" ]
+then
+    if [ -f /mnt/c/Users/$USERNAME/Downloads/kmk ]
+    then
+        error "This script needs the KU Leuven kmk binary.
+Please download it from here: https://admin.kuleuven.be/icts/services/ssh-cert/kmk
+and save it in your Windows Downloads folder (C:\Users\$USERNAME\Downloads)"
+    fi
+fi
+
+
+### <<< 1. Ask u-number >>>
 # Ask for SSH username
 read -r -p "Enter your KU Leuven username (r-number, u-number) " SSH_USER
 
 if [ -z "$SSH_USER" ]; then
-    echo "No username entered. Stopping."
+    error "No username entered. Stopping."
     exit 1
 fi
 
-## Optional: ask for key path
-#DEFAULT_KEY="$HOME/.ssh/id_ed25519"
-#read -r -p "Enter the SSH private key path [$DEFAULT_KEY]: " SSH_KEY
-#SSH_KEY="${SSH_KEY:-$DEFAULT_KEY}"
 
+
+### <<< 2. Create .ssh/config >>>
 # Make sure ~/.ssh exists with correct permissions
+debug "Checking $HOME/.ssh"
 mkdir -p "$HOME/.ssh"
 chmod 700 "$HOME/.ssh"
 
-CONFIG_FILE="$HOME/.ssh/config"
-touch "$CONFIG_FILE"
-chmod 600 "$CONFIG_FILE"
+debug "Checking $SSH_CONFIG_FILE"
+touch "$SSH_CONFIG_FILE"
+chmod 600 "$SSH_CONFIG_FILE"
 
-echo
-echo "Adding .ssh/config entries for 's' and 'cluster'"
-echo
+
+
+### <<< 3. Add s and cluster config >>>
+debug "Adding $SSH_CONFIG_FILE entries for 's' and 'cluster'"
 
 BLOCK_START="# >>> KU Leuven NS WSL SSH setup >>>"
 BLOCK_END="# <<< KU Leuven NS WSL SSH setup <<<"
 
 TMP_FILE="$(mktemp)"
+debug "TMP_FILE = $TMP_FILE"
 
 # Remove old managed block if present, then write fresh content
 awk -v start="$BLOCK_START" -v end="$BLOCK_END" '
     $0 == start {skip=1; next}
     $0 == end   {skip=0; next}
     !skip       {print}
-' "$CONFIG_FILE" > "$TMP_FILE"
+' "$SSH_CONFIG_FILE" > "$TMP_FILE"
 
 cat >> "$TMP_FILE" <<EOF
 
@@ -90,22 +134,22 @@ Host cluster cluster-last cluster.fys.kuleuven.be cluster-last.fys.kuleuven.be
 $BLOCK_END
 EOF
 
-mv "$TMP_FILE" "$CONFIG_FILE"
-chmod 600 "$CONFIG_FILE"
+mv "$TMP_FILE" "$SSH_CONFIG_FILE"
+chmod 600 "$SSH_CONFIG_FILE"
 
-echo "SSH config updated: $CONFIG_FILE"
+info "Updated ssh config: $SSH_CONFIG_FILE"
 
+
+
+### <<< 4. Add kmk helper scritp >>>
 # Create ~/.local/bin if needed
-LOCAL_BIN="$HOME/.local/bin"
+debug "Checking $LOCAL_BIN"
 mkdir -p "$LOCAL_BIN"
-
-KMKCHECK_FILE="$LOCAL_BIN/kmkcheck"
 
 cat > "$KMKCHECK_FILE" <<'EOF'
 #!/usr/bin/env bash
 trap 'trap - INT; kill -INT -- -$$' INT
 
-echo "Right kmkcheck"
 ssh-add -l >/dev/null 2>&1
 if [ $? -eq 2 ]; then
   echo "Error: No SSH agent running." >&2
@@ -121,63 +165,73 @@ fi
 exec /usr/bin/nc "$1" "$2"
 EOF
 
-chmod +x "$HELPER_FILE"
-echo "Helper command created: $HELPER_FILE"
+chmod 755 "$KMKCHECK_FILE"
 
-# Check whether ~/.local/bin is already in PATH now
+info "Updated $KMKCHECK_FILE"
+
+
+
+### <<< 5. Add $LOCAL_BIN to path >>>
+# Check whether $LOCAL_BIN is already in PATH now
+# Create $BASHRC if the file does not exist
+if [ ! -f "$BASHRC" ]; then
+    if [ -f /etc/skel/.bashrc ]; then
+	info "No $BASHRC found, copying from skel"
+        install -m 0644 /etc/skel/.bashrc "$BASHRC"
+    else
+        warning "/etc/skel/.bashrc not found. Ignoring..." >&2
+    fi
+fi
+
+debug "Check $LOCAL_BIN presence in PATH"
 PATH_OK=0
 case ":$PATH:" in
     *":$HOME/.local/bin:"*) PATH_OK=1 ;;
 esac
-
-BASHRC="$HOME/.bashrc"
-
-if [ ! -f "$BASHRC" ]; then
-    if [ -f /etc/skel/.bashrc ]; then
-        install -m 0644 /etc/skel/.bashrc "$BASHRC"
-    else
-        echo "Warning: /etc/skel/.bashrc not found. Ignoring..." >&2
-    fi
-fi
-
 # Check whether .bashrc already contains a generic ~/.local/bin setup
+debug "Checking $BASHRC" 
 BASHRC_HAS_GENERIC=0
 if grep -Eq '(\.local/bin|HOME/\.local/bin)' "$BASHRC" 2>/dev/null; then
     BASHRC_HAS_GENERIC=1
 fi
 
 if [ "$PATH_OK" -eq 1 ]; then
-    echo "~/.local/bin is already in PATH."
+    debug "$LOCAL_BIN is already in PATH."
 elif [ "$BASHRC_HAS_GENERIC" -eq 1 ]; then
-    echo "~/.bashrc already seems to handle ~/.local/bin."
+    debug "$BASHRC already seems to handle $LOCAL_BIN."
 else
-    cat >> "$BASHRC" <<'EOF'
+    cat >> "$BASHRC" <<EOF
 
 # Added by KU Leuven NS WSL SSH setup
-if [ -d "$HOME/.local/bin" ]; then
-    export PATH="$HOME/.local/bin:$PATH"
+if [ -d "$LOCAL_BIN" ]; then
+    export PATH="$LOCAL_BIN:\$PATH"
 fi
 EOF
-    echo "Added ~/.local/bin to PATH in $BASHRC"
+    info "Added $LOCAL_BIN to PATH in $BASHRC"
 fi
 
+
+
+### <<< 6. set up npiperelay >>>
 # Check if npiperelay is already present
 if [ ! -f "$LOCAL_BIN/npiperelay.exe" ]; then
     tmpzip="$(mktemp /tmp/npiperelay.XXXXXX.zip)"
     tmpdir="$(mktemp -d /tmp/npiperelay.XXXXXX)" || exit 1
+    debug "tmpzip = $tmpzip"
+    debug "tmpdir = $tmpdir"
     if curl -Lf -o "$tmpzip" "https://github.com/jstarks/npiperelay/releases/download/v0.1.0/npiperelay_windows_amd64.zip"
     then
         unzip -o "$tmpzip" -d "$tmpdir"
         if [ -f "$tmpdir/npiperelay.exe" ]; then
             install -m 0755 "$tmpdir/npiperelay.exe" "$LOCAL_BIN/npiperelay.exe"
         else
-            echo "npiperelay.exe not found in downloaded zip" >&2
+            error "npiperelay.exe not found in downloaded zip"
             exit 1
         fi
         rm -f "$tmpzip"
         chmod +x "$LOCAL_BIN/npiperelay.exe"
     else
-        echo "Failed to download npiperelay zip" >&2
+        error "Failed to download npiperelay zip" >&2
         exit 1
     fi    
     case "$tmpdir" in
@@ -185,26 +239,33 @@ if [ ! -f "$LOCAL_BIN/npiperelay.exe" ]; then
             rm -r -- "$tmpdir"
             ;;
         *)
-            echo "Warning: Refusing to delete unexpected temporary directory: $tmpdir. Ignoring..." >&2
+            warning "Refusing to delete unexpected temporary directory: $tmpdir. Ignoring..." >&2
             ;;
     esac
+    info "Installed npiperelay to $LOCAL_BIN/npiperelay.exe"
+else
+    debug "npiperelay already present"
 fi
 
 
+
+### <<< 7. sets up npiperelay >>>
 # Remove old managed block if present in .bashrc, then write fresh content
 TMP_BASHRC_FILE="$(mktemp)"
+debug "TMP_BASHRC_FILE = $TMP_BASHRC_FILE"
 awk -v start="$BLOCK_START" -v end="$BLOCK_END" '
     $0 == start {skip=1; next}
     $0 == end   {skip=0; next}
     !skip       {print}
-' "$CONFIG_FILE" > "$TMP_BASHRC_FILE"
+' "$BASHRC" > "$TMP_BASHRC_FILE"
 
+# Update block
 cat >> "$TMP_BASHRC_FILE" <<EOF
 
 $BLOCK_START
 # Add a space separated list of keys you want to add from your Windows SSH agent; optional
 # For example:
-# SSH_keys_to_add=("id_rsa" "id_ecdsa")
+# SSH_keys_to_add=("id_rsa" "id_ed25519")
 SSH_keys_to_add=()
 _hook_agent() {
   export SSH_AUTH_SOCK=\$HOME/.ssh/agent.sock
@@ -267,12 +328,19 @@ unset -f _hook_agent
 $BLOCK_END
 EOF
 
-echo
-echo "Setup finished."
-echo
-echo "You can now:"
-echo "  1. Open a new shell, or run: source ~/.bashrc"
-echo "  2. Connect with: ssh myserver"
-echo "  3. Or use the helper: ssh-go myserver"
-echo
+mv "$TMP_BASHRC_FILE" "$BASHRC"
+chmod 644
+info "Updated $BASHRC"
 
+info "Up to date!"
+echo
+echo "This script requires KU Leuven's CertAgent"
+if tasklist.exe | grep -qi '^CertAgent.exe'
+then
+    info "CertAgent.exe is already running on Windows.
+Make sure it is set to autostart (right click the icon in the Windows Tray -> autostart)"
+else
+    warning "CertAgent.exe is currently not running on Windows.
+Make sure it is installed and set it to autostart (right click the icon in the Windows Tray -> autostart).
+You can find the installer at https://admin.kuleuven.be/icts/services/ssh-cert/ssh-certificates-for-windows"
+fi
