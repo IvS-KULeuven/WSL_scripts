@@ -22,7 +22,7 @@ set -euo pipefail
 # shell starts. The cache follows Windows: changed keys are copied again, and keys
 # deleted on Windows are removed from the cache.
 #
-# Usage: setup.sh [--keys "KEY ..."] [--no-keys] [-h|--help]
+# Usage: setup_WSL.sh [--keys "KEY ..."] [--no-keys] [-h|--help]
 #
 # The script is safe to run again: files are only rewritten when their content
 # changes, and the blocks it manages in ~/.ssh/config and ~/.bashrc are replaced,
@@ -209,7 +209,7 @@ other_host_entries() {
 ### Arguments
 usage() {
     cat <<'EOF'
-Usage: setup.sh [--keys "KEY ..."] [--no-keys] [-h|--help]
+Usage: setup_WSL.sh [--keys "KEY ..."] [--no-keys] [-h|--help]
 
   --keys "KEY ..."  Load these keys from your Windows .ssh folder (C:\Users\<you>\.ssh)
                     into the agent at every WSL start. Space separated file names,
@@ -683,7 +683,7 @@ if [ "${#SSH_KEYS[@]}" -eq 0 ]; then
     cat >> "$WORK_DIR/bashrc_block" <<EOF
 
 # Optional: load SSH keys from your Windows .ssh folder at WSL start.
-# Not enabled; run setup.sh --keys "KEY ..." to enable.
+# Not enabled; run setup_WSL.sh --keys "KEY ..." to enable.
 $BLOCK_END
 EOF
 else
@@ -692,7 +692,7 @@ else
 # Optional: load SSH keys from your Windows .ssh folder at WSL start, because
 # CertAgent forgets keys after a restart. WSL cannot use the Windows key files
 # directly (permissions), so they are cached in ~/.ssh/.windows-cached-keys.
-# To change the list, run setup.sh --keys "KEY ..." (or --no-keys).
+# To change the list, run setup_WSL.sh --keys "KEY ..." (or --no-keys).
 SSH_keys_to_add=($(printf '"%s" ' "${SSH_KEYS[@]}" | sed 's/ $//'))
 SSH_key_location="$WIN_SSH_DIR"
 SSH_key_cache="\$HOME/.ssh/.windows-cached-keys"
@@ -708,7 +708,7 @@ _load_windows_keys() {
     if [ ! -f "$src" ]; then
       rm -f -- "$cache" "$cache.pub"
       echo "Warning: Windows SSH key '$key' no longer exists, skipping it." >&2
-      echo "         Remove it from SSH_keys_to_add in ~/.bashrc, or rerun setup.sh with --keys." >&2
+      echo "         Remove it from SSH_keys_to_add in ~/.bashrc, or rerun setup_WSL.sh with --keys." >&2
       continue
     fi
     # New or changed on Windows: (re)cache it, after removing the old version from the agent
