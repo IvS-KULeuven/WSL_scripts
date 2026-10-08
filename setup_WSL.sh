@@ -8,7 +8,8 @@ set -euo pipefail
 # 2. creates ~/.ssh/config if needed
 # 3. adds host entries to ~/.ssh/config, and to C:\Users\<you>\.ssh\config for ssh in
 #    PowerShell/CMD (there without kmkcheck: Windows ssh talks to CertAgent directly)
-# 4. installs kmk and a helper command (kmkcheck) in ~/.local/bin
+# 4. installs kmk and a helper command (kmkcheck) in ~/.local/bin, and sets your
+#    username in the CertAgent config (C:\Users\<you>\AppData\Roaming\certagent)
 # 5. downloads npiperelay to communicate with Windows CertAgent
 # 6. sets up the necessary config in ~/.bashrc (incl. ~/.local/bin on PATH)
 # 7. optionally loads SSH keys from your Windows .ssh folder at every WSL start
@@ -178,6 +179,56 @@ find_kmk() {
         done
         if [ -n "$newest" ]; then printf '%s' "$newest"; return 0; fi
     done
+}
+
+# The CertAgent config (TOML): the username sits in the [general] table.
+# BOM is the UTF-8 byte order mark that some Windows editors put at the start of a file.
+BOM=$'\xef\xbb\xbf'
+
+# certagent_username: print the username set in the CertAgent config, if any
+certagent_username() {
+    [ -f "$CERTAGENT_CONFIG_FILE" ] || return 0
+    awk -v bom="$BOM" '
+        NR == 1 && index($0, bom) == 1 { $0 = substr($0, length(bom) + 1) }
+        { sub(/\r$/, "") }
+        /^[[:space:]]*\[/ { section = $0; sub(/#.*/, "", section); gsub(/[[:space:]]/, "", section); next }
+        section == "[general]" && /^[[:space:]]*username[[:space:]]*=/ {
+            value = $0
+            sub(/^[^=]*=[[:space:]]*/, "", value)
+            sub(/[[:space:]]*(#.*)?$/, "", value)
+            gsub(/^["\047]|["\047]$/, "", value)
+            print value; exit
+        }' "$CERTAGENT_CONFIG_FILE"
+}
+
+# set_certagent_username <user> <out>: write the CertAgent config with username set in
+# [general], keeping everything else. Only used when no username is set, so existing
+# (empty) username lines in [general] are dropped. CRLF line endings and a BOM are kept.
+set_certagent_username() {
+    local user=$1 out=$2
+    if [ -f "$CERTAGENT_CONFIG_FILE" ]; then
+        awk -v user="$1" -v bom="$BOM" '
+            NR == 1 && index($0, bom) == 1 { printf "%s", bom; $0 = substr($0, length(bom) + 1) }
+            { sub(/\r$/, "") }
+            /^[[:space:]]*\[/ {
+                section = $0; sub(/#.*/, "", section); gsub(/[[:space:]]/, "", section)
+                print
+                if (section == "[general]" && !done) { print "username=\"" user "\""; done = 1 }
+                next
+            }
+            section == "[general]" && /^[[:space:]]*username[[:space:]]*=/ { next }
+                { print; lines++ }
+            END {
+                if (!done) {
+                    if (lines) print ""
+                    print "[general]"
+                    print "username=\"" user "\""
+                }
+            }' "$CERTAGENT_CONFIG_FILE" > "$out"
+        if grep -q $'\r' "$CERTAGENT_CONFIG_FILE"; then sed -i 's/$/\r/' "$out"; fi
+    else
+        printf '[general]\nusername="%s"\n' "$user" > "$out"
+    fi
 }
 
 # write_managed_block <file> <block file> [mode]: replace the managed block in file.
@@ -352,6 +403,28 @@ else
     fail "CertAgent not checked (needs Windows interop)"
 fi
 
+# CertAgent needs your username in its config (tray icon -> Modify config). If it is not
+# set, the configure step below adds the username you enter.
+CERTAGENT_CONFIG_FILE="$WIN_HOME/AppData/Roaming/certagent/certagent.toml"
+CERTAGENT_USER=""
+if [ -n "$WIN_USER" ]; then
+    if [ -f "$CERTAGENT_CONFIG_FILE" ] && [ "$(tr -cd '\000' < "$CERTAGENT_CONFIG_FILE" | wc -c)" -gt 0 ]; then
+        fail "The CertAgent config is not a plain text (UTF-8) file"
+        hint "Right-click the CertAgent icon in the Windows tray, choose 'Modify config'"
+        hint "and save the file as UTF-8. Then run this script again."
+    else
+        CERTAGENT_USER="$(certagent_username)"
+        debug "CertAgent config username = ${CERTAGENT_USER:-none}"
+        if [ -n "$CERTAGENT_USER" ]; then
+            ok "CertAgent username: $CERTAGENT_USER"
+        elif [ -f "$CERTAGENT_CONFIG_FILE" ]; then
+            ok "CertAgent config has no username yet (will be set below)"
+        else
+            ok "No CertAgent config yet (will be created below)"
+        fi
+    fi
+fi
+
 # The OpenSSH Authentication Agent service that comes with Windows serves the same pipe
 # as CertAgent (\\.\pipe\openssh-ssh-agent), so only one of them can run. Field names
 # and numeric codes in the sc.exe output are not translated; 1060 = service not installed.
@@ -481,6 +554,7 @@ heading "KU Leuven account"
 # Offer the username from a previous run (ssh config, else kmk config) as default
 previous_user="$(block_value "$SSH_CONFIG_FILE" '^[[:space:]]*User[[:space:]]' 2)"
 previous_user="${previous_user:-$(kmk_principals)}"
+previous_user="${previous_user:-$CERTAGENT_USER}"
 if [ -n "$previous_user" ]; then
     prompt="  Enter your KU Leuven username (r-number, u-number) [$previous_user]: "
 else
@@ -553,6 +627,28 @@ EOF
 mkdir -p "$WIN_SSH_DIR"
 write_managed_block "$WIN_SSH_CONFIG_FILE" "$WORK_DIR/win_ssh_block"
 report "$RESULT" "$WIN_SSH_CONFIG_FILE"
+
+
+
+### <<< 3c. Set the username in the CertAgent config >>>
+# Only when no username is set: an existing one is never overwritten.
+if [ -n "$CERTAGENT_USER" ]; then
+    report unchanged "$CERTAGENT_CONFIG_FILE"
+    if [ "$CERTAGENT_USER" != "$SSH_USER" ]; then
+        warn "CertAgent uses username $CERTAGENT_USER, but you entered $SSH_USER"
+        hint "To change it, right-click the CertAgent icon in the Windows tray, choose"
+        hint "'Modify config' and set: username=\"$SSH_USER\" (under [general])."
+    fi
+else
+    mkdir -p "$(dirname "$CERTAGENT_CONFIG_FILE")"
+    set_certagent_username "$SSH_USER" "$WORK_DIR/certagent.toml"
+    install_file "$WORK_DIR/certagent.toml" "$CERTAGENT_CONFIG_FILE"
+    report "$RESULT" "$CERTAGENT_CONFIG_FILE"
+    if [ "${certagent_running:-0}" -eq 1 ]; then
+        warn "CertAgent was already running, so it does not know the new username yet"
+        hint "Quit CertAgent (right-click the tray icon) and start it again."
+    fi
+fi
 
 
 

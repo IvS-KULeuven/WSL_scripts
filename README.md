@@ -17,6 +17,8 @@ runs automatically to get a new one.
 ### Windows (WSL)
 1. Install [CertAgent](https://admin.kuleuven.be/icts/services/ssh-cert/ssh-certificates-for-windows)
    and set it to start automatically (right-click the tray icon and check **AutoStart**).
+   You don't need to fill in your username under **Modify config**: the script sets it
+   when it's missing.
 2. Download the **Linux** version of kmk:
    [kmk-x86_64-latest](https://w.fys.kuleuven.be/public/deploy/Linux/kmk/kmk-x86_64-latest).
    Leave it in your Windows **Downloads** folder; the script finds and installs it.
@@ -90,7 +92,7 @@ certificate. Log in with your KU Leuven account and MFA when asked.
 **Windows:** after the setup, restart your laptop, or run `wsl --shutdown` in PowerShell
 and wait 10 seconds. Then open a new WSL terminal. `ssh s` and `ssh cluster` also work in
 PowerShell and CMD. There, kmk does not run automatically: if the connection is refused,
-Rigth-click CertAgent in the tray to `Renew certificate`.
+right-click CertAgent in the tray to `Renew certificate`.
 
 
 ## What the scripts change
