@@ -32,7 +32,7 @@ SSH_DIR="$HOME/.ssh"
 SSH_CONFIG_FILE="$SSH_DIR/config"
 KMKCHECK_FILE="$LOCAL_BIN/kmkcheck"
 KMK_DOWNLOAD="$HOME/Downloads/kmk"
-KMK_URL="https://admin.kuleuven.be/icts/services/ssh-cert/kmk"
+KMK_URL="https://w.fys.kuleuven.be/public/deploy/$(uname -s)/kmk/kmk-$(uname -m)-latest"
 
 case "$(basename "${SHELL:-/bin/zsh}")" in
     bash) SHELL_RC="$HOME/.bash_profile" ;;

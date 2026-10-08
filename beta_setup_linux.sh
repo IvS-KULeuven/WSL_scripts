@@ -34,7 +34,7 @@ SSH_DIR="$HOME/.ssh"
 SSH_CONFIG_FILE="$SSH_DIR/config"
 KMKCHECK_FILE="$LOCAL_BIN/kmkcheck"
 KMK_CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/kmk/kmk.toml"
-KMK_URL="https://admin.kuleuven.be/icts/services/ssh-cert/kmk"
+KMK_URL="https://w.fys.kuleuven.be/public/deploy/$(uname -s)/kmk/kmk-$(uname -m)-latest"
 
 BLOCK_START="# >>> KU Leuven NS Linux SSH setup >>>"
 BLOCK_END="# <<< KU Leuven NS Linux SSH setup <<<"
