@@ -144,6 +144,25 @@ kmk_principals() {
     awk -F'"' '/^[[:space:]]*principals[[:space:]]*=/ { print $2; exit }' "$KMK_CONFIG_FILE"
 }
 
+# find_kmk <dir>...: print the kmk download to install, if any. Preferred: the download
+# for this CPU (kmk-<arch>-latest, incl. browser copies like 'kmk-x86_64-latest (1)'),
+# then a file already renamed to 'kmk', then any other kmk-* file. The newest file wins
+# within each of these. Partial downloads are skipped.
+find_kmk() {
+    local pattern dir f newest
+    for pattern in "kmk-$(uname -m)-latest*" "kmk" "kmk-*"; do
+        newest=""
+        for dir in "$@"; do
+            for f in "$dir"/$pattern; do
+                [ -f "$f" ] || continue
+                case "$f" in *.crdownload|*.part|*.download|*.tmp) continue ;; esac
+                if [ -z "$newest" ] || [ "$f" -nt "$newest" ]; then newest=$f; fi
+            done
+        done
+        if [ -n "$newest" ]; then printf '%s' "$newest"; return 0; fi
+    done
+}
+
 # write_managed_block <file> <block file> [mode]: replace the managed block in file
 write_managed_block() {
     local file=$1 block=$2 mode=${3:-} tmp
@@ -226,17 +245,21 @@ else
     esac
 fi
 
-# kmk: installed, or in the Downloads folder (which may have a localized name)
+# kmk: installed, or downloaded in the Downloads folder (which may have a localized
+# name; any download name, see find_kmk)
 DOWNLOAD_DIR="$(xdg-user-dir DOWNLOAD 2>/dev/null || true)"
 if [ -z "$DOWNLOAD_DIR" ] || [ "$DOWNLOAD_DIR" = "$HOME" ]; then DOWNLOAD_DIR="$HOME/Downloads"; fi
-KMK_SOURCE=""
-for f in "$LOCAL_BIN/kmk" "$DOWNLOAD_DIR/kmk" "$HOME/Downloads/kmk"; do
-    if [ -f "$f" ]; then KMK_SOURCE=$f; break; fi
-done
+if [ -f "$LOCAL_BIN/kmk" ]; then
+    KMK_SOURCE="$LOCAL_BIN/kmk"
+elif [ "$DOWNLOAD_DIR" = "$HOME/Downloads" ]; then
+    KMK_SOURCE="$(find_kmk "$DOWNLOAD_DIR")"
+else
+    KMK_SOURCE="$(find_kmk "$DOWNLOAD_DIR" "$HOME/Downloads")"
+fi
 if [ -z "$KMK_SOURCE" ]; then
     fail "kmk binary not found"
     hint "Download the Linux version from $KMK_URL"
-    hint "and save it in your Downloads folder ($(pretty "$DOWNLOAD_DIR")) as 'kmk'."
+    hint "and save it in your Downloads folder ($(pretty "$DOWNLOAD_DIR"))."
 else
     # Make sure it actually runs here (e.g. not a macOS or wrong-CPU build)
     install -m 0755 "$KMK_SOURCE" "$WORK_DIR/kmk"
@@ -244,7 +267,7 @@ else
         if [ "$KMK_SOURCE" = "$LOCAL_BIN/kmk" ]; then
             ok "kmk installed in $(pretty "$LOCAL_BIN")"
         else
-            ok "kmk found in $(pretty "$(dirname "$KMK_SOURCE")")"
+            ok "kmk found: $(pretty "$KMK_SOURCE")"
         fi
     else
         fail "$(pretty "$KMK_SOURCE") does not run on this system ($(uname -m))"
@@ -307,7 +330,8 @@ chmod 700 "$SSH_DIR"
 
 
 ### <<< 2. Install kmk and helper script >>>
-# Install kmk (only if missing; delete ~/.local/bin/kmk to reinstall from Downloads)
+# Install kmk as ~/.local/bin/kmk, whatever the download is called (only if missing;
+# delete ~/.local/bin/kmk to reinstall from Downloads)
 if [ "$KMK_SOURCE" = "$LOCAL_BIN/kmk" ]; then
     report unchanged "$LOCAL_BIN/kmk"
 else

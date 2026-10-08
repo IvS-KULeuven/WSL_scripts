@@ -6,7 +6,8 @@ set -euo pipefail
 # 0. checks all prerequisites at once and prints an overview of what is missing
 # 1. asks for your r-number (or u- or b-number)
 # 2. creates ~/.ssh/config if needed
-# 3. adds host entries to ~/.ssh/config
+# 3. adds host entries to ~/.ssh/config, and to C:\Users\<you>\.ssh\config for ssh in
+#    PowerShell/CMD (there without kmkcheck: Windows ssh talks to CertAgent directly)
 # 4. installs kmk and a helper command (kmkcheck) in ~/.local/bin
 # 5. downloads npiperelay to communicate with Windows CertAgent
 # 6. sets up the necessary config in ~/.bashrc (incl. ~/.local/bin on PATH)
@@ -118,18 +119,21 @@ install_file() {
 }
 
 # markers_balanced <file>: true if every managed block start has a matching end
+# (\r is ignored, so this also works for Windows files with CRLF line endings)
 markers_balanced() {
     local starts ends
     [ -f "$1" ] || return 0
-    starts="$(grep -cxF -- "$BLOCK_START" "$1" || true)"
-    ends="$(grep -cxF -- "$BLOCK_END" "$1" || true)"
+    starts="$(tr -d '\r' < "$1" | grep -cxF -- "$BLOCK_START" || true)"
+    ends="$(tr -d '\r' < "$1" | grep -cxF -- "$BLOCK_END" || true)"
     [ "$starts" = "$ends" ]
 }
 
 # strip_block <file>: print file without the managed block, without the legacy PATH
-# snippet and without trailing blank lines (so reruns don't keep adding blank lines)
+# snippet and without trailing blank lines (so reruns don't keep adding blank lines).
+# CRLF line endings are converted to LF.
 strip_block() {
     awk -v start="$BLOCK_START" -v end="$BLOCK_END" -v old="$OLD_PATH_MARKER" '
+                         { sub(/\r$/, "") }
         $0 == start      { skip = 1; next }
         skip             { if ($0 == end) skip = 0; next }
         $0 == old        { legacy = 3; next }
@@ -144,6 +148,7 @@ strip_block() {
 block_value() {
     [ -f "$1" ] || return 0
     awk -v start="$BLOCK_START" -v end="$BLOCK_END" -v re="$2" -v field="$3" '
+                            { sub(/\r$/, "") }
         $0 == start         { inside = 1; next }
         $0 == end           { inside = 0; next }
         inside && $0 ~ re   { print $field; exit }
@@ -156,15 +161,48 @@ kmk_principals() {
     awk -F'"' '/^[[:space:]]*principals[[:space:]]*=/ { print $2; exit }' "$KMK_CONFIG_FILE"
 }
 
-# write_managed_block <file> <block file> [mode]: replace the managed block in file
+# find_kmk <dir>...: print the kmk download to install, if any. Preferred: the download
+# for this CPU (kmk-<arch>-latest, incl. browser copies like 'kmk-x86_64-latest (1)'),
+# then a file already renamed to 'kmk', then any other kmk-* file. The newest file wins
+# within each of these. Partial downloads are skipped.
+find_kmk() {
+    local pattern dir f newest
+    for pattern in "kmk-$(uname -m)-latest*" "kmk" "kmk-*"; do
+        newest=""
+        for dir in "$@"; do
+            for f in "$dir"/$pattern; do
+                [ -f "$f" ] || continue
+                case "$f" in *.crdownload|*.part|*.download|*.tmp) continue ;; esac
+                if [ -z "$newest" ] || [ "$f" -nt "$newest" ]; then newest=$f; fi
+            done
+        done
+        if [ -n "$newest" ]; then printf '%s' "$newest"; return 0; fi
+    done
+}
+
+# write_managed_block <file> <block file> [mode]: replace the managed block in file.
+# A file with CRLF line endings keeps them.
 write_managed_block() {
     local file=$1 block=$2 mode=${3:-} tmp
-    tmp="$WORK_DIR/$(basename "$file").new"
+    tmp="$WORK_DIR/$(basename "$(dirname "$file")")_$(basename "$file").new"
     : > "$tmp"
     if [ -f "$file" ]; then strip_block "$file" > "$tmp"; fi
     if [ -s "$tmp" ]; then printf '\n' >> "$tmp"; fi
     cat "$block" >> "$tmp"
+    if [ -f "$file" ] && grep -q $'\r' "$file"; then sed -i 's/$/\r/' "$tmp"; fi
     install_file "$tmp" "$file" "$mode"
+}
+
+# other_host_entries <file>: print the s/cluster host names that already have a Host
+# entry outside the managed block. ssh uses the first value it finds for each option,
+# so those entries take precedence over the managed block at the end of the file.
+other_host_entries() {
+    [ -f "$1" ] || return 0
+    strip_block "$1" | awk '
+        tolower($1) == "host" {
+            for (i = 2; i <= NF; i++)
+                if ($i ~ /^(s|cluster|cluster-last)(\.fys\.kuleuven\.be)?$/) print $i
+        }' | sort -u | tr '\n' ' ' | sed 's/ $//'
 }
 
 
@@ -240,12 +278,27 @@ else
     hint "  sudo apt update && sudo apt install -y ${missing_packages[*]}"
 fi
 
-# kmk
-KMK_DOWNLOAD="$WIN_HOME/Downloads/kmk"
+# kmk: installed, or downloaded in the Windows Downloads folder (any name, see find_kmk)
+KMK_SOURCE=""
 if [ -f "$LOCAL_BIN/kmk" ]; then
-    ok "kmk installed in $(pretty "$LOCAL_BIN")"
-elif [ -n "$WIN_USER" ] && [ -f "$KMK_DOWNLOAD" ]; then
-    ok "kmk found in your Windows Downloads folder"
+    KMK_SOURCE="$LOCAL_BIN/kmk"
+elif [ -n "$WIN_USER" ]; then
+    KMK_SOURCE="$(find_kmk "$WIN_HOME/Downloads")"
+fi
+if [ -n "$KMK_SOURCE" ]; then
+    # Make sure it actually runs here (e.g. not a macOS or wrong-CPU build)
+    install -m 0755 "$KMK_SOURCE" "$WORK_DIR/kmk"
+    if "$WORK_DIR/kmk" --help >/dev/null 2>&1; then
+        if [ "$KMK_SOURCE" = "$LOCAL_BIN/kmk" ]; then
+            ok "kmk installed in $(pretty "$LOCAL_BIN")"
+        else
+            ok "kmk found in your Windows Downloads folder ($(basename "$KMK_SOURCE"))"
+        fi
+    else
+        fail "$(basename "$KMK_SOURCE") in your Windows Downloads folder does not run in WSL"
+        hint "Download the Linux version from $KMK_URL"
+        hint "and save it in your Windows Downloads folder (C:\\Users\\$WIN_USER\\Downloads)."
+    fi
 elif [ -n "$WIN_USER" ]; then
     fail "kmk binary not found"
     hint "Download it from $KMK_URL"
@@ -299,6 +352,36 @@ else
     fail "CertAgent not checked (needs Windows interop)"
 fi
 
+# The OpenSSH Authentication Agent service that comes with Windows serves the same pipe
+# as CertAgent (\\.\pipe\openssh-ssh-agent), so only one of them can run. Field names
+# and numeric codes in the sc.exe output are not translated; 1060 = service not installed.
+if [ -n "$WIN_USER" ]; then
+    sc_query="$(sc.exe query ssh-agent </dev/null 2>/dev/null | tr -d '\r' || true)"
+    sc_config="$(sc.exe qc ssh-agent </dev/null 2>/dev/null | tr -d '\r' || true)"
+    agent_state="$(awk '$1 == "STATE" { print $3; exit }' <<< "$sc_query")"
+    agent_start="$(awk '$1 == "START_TYPE" { print $3; exit }' <<< "$sc_config")"
+    debug "Windows ssh-agent service state=${agent_state:-none} start_type=${agent_start:-none}"
+
+    agent_advice() {
+        hint "In PowerShell as administrator, run:"
+        hint "  Stop-Service ssh-agent"
+        hint "  Set-Service ssh-agent -StartupType Disabled"
+        hint "Then quit CertAgent (right-click the tray icon) and start it again."
+    }
+    if [ "$agent_state" = "4" ]; then
+        fail "The Windows OpenSSH Authentication Agent service is running"
+        hint "It takes the place of CertAgent, so CertAgent's certificates are not used."
+        agent_advice
+    elif [ "$agent_start" = "2" ]; then
+        warn "The Windows OpenSSH Authentication Agent service starts automatically"
+        hint "It is stopped now, but at the next Windows start it takes the place of CertAgent."
+        agent_advice
+    else
+        ok "Windows OpenSSH Authentication Agent service not active"
+    fi
+    unset -f agent_advice
+fi
+
 # Optional Windows SSH keys (--keys). Explicitly requested keys that are unusable are
 # errors; keys kept from a previous run that disappeared are dropped with a warning.
 WIN_SSH_DIR="$WIN_HOME/.ssh"
@@ -349,11 +432,38 @@ if [ -n "$WIN_USER" ]; then
     fi
 fi
 
+# Windows ssh (PowerShell/CMD) gets the same hosts in C:\Users\<you>\.ssh\config
+WIN_SSH_CONFIG_FILE="$WIN_SSH_DIR/config"
+if [ -n "$WIN_USER" ]; then
+    if [ -f /mnt/c/Windows/System32/OpenSSH/ssh.exe ]; then
+        ok "Windows OpenSSH client"
+    else
+        warn "Windows OpenSSH client not found"
+        hint "WSL works without it. To use ssh in PowerShell/CMD as well, add the optional"
+        hint "feature 'OpenSSH Client' in Windows Settings -> System -> Optional features."
+    fi
+    # A config file made with 'echo ... > config' in Windows PowerShell 5 is UTF-16
+    if [ -f "$WIN_SSH_CONFIG_FILE" ] && [ "$(tr -cd '\000' < "$WIN_SSH_CONFIG_FILE" | wc -c)" -gt 0 ]; then
+        fail "C:\\Users\\$WIN_USER\\.ssh\\config is not a plain text (UTF-8) file"
+        hint "Windows ssh cannot read it either. Save it as UTF-8 (e.g. in Notepad) and run again."
+    fi
+fi
+
 # Existing config files must not contain a half-removed managed block
-for f in "$SSH_CONFIG_FILE" "$BASHRC"; do
+for f in "$SSH_CONFIG_FILE" "$BASHRC" ${WIN_USER:+"$WIN_SSH_CONFIG_FILE"}; do
     if ! markers_balanced "$f"; then
         fail "$(pretty "$f") has an incomplete '$BLOCK_START' block"
         hint "Remove the leftover '$BLOCK_START' / '$BLOCK_END' lines and run again."
+    fi
+done
+
+# Own entries for the same hosts would override the ones this script adds
+for f in "$SSH_CONFIG_FILE" ${WIN_USER:+"$WIN_SSH_CONFIG_FILE"}; do
+    hosts="$(other_host_entries "$f")"
+    if [ -n "$hosts" ]; then
+        warn "$(pretty "$f") already has Host entries for: $hosts"
+        hint "Settings there take precedence over the ones this script adds. Remove those"
+        hint "entries unless you want to keep them."
     fi
 done
 
@@ -419,6 +529,31 @@ EOF
 write_managed_block "$SSH_CONFIG_FILE" "$WORK_DIR/ssh_block" 600
 report "$RESULT" "$SSH_CONFIG_FILE"
 
+# Same hosts for ssh in PowerShell/CMD. Windows ssh uses CertAgent directly (it serves
+# the default agent pipe \\.\pipe\openssh-ssh-agent), so no kmkcheck proxy is needed.
+# The nested ssh is called by full path, as Windows ssh runs ProxyCommand without a shell.
+# No chmod: files on /mnt/c get the (user-only) permissions of C:\Users\<you>.
+cat > "$WORK_DIR/win_ssh_block" <<EOF
+$BLOCK_START
+Host s s.fys.kuleuven.be
+  HostName s.fys.kuleuven.be
+  User $SSH_USER
+  ForwardAgent yes
+  ServerAliveInterval 240
+Host cluster cluster-last cluster.fys.kuleuven.be cluster-last.fys.kuleuven.be
+  ProxyCommand ssh %r@s /usr/bin/ballast-login %h
+  User $SSH_USER
+  ForwardAgent yes
+  ForwardX11 yes
+  ServerAliveInterval 240
+  HostKeyAlias cluster.fys.kuleuven.be
+$BLOCK_END
+EOF
+
+mkdir -p "$WIN_SSH_DIR"
+write_managed_block "$WIN_SSH_CONFIG_FILE" "$WORK_DIR/win_ssh_block"
+report "$RESULT" "$WIN_SSH_CONFIG_FILE"
+
 
 
 ### <<< 4. Add kmk  and helper script >>>
@@ -444,11 +579,12 @@ EOF
 install_file "$WORK_DIR/kmkcheck" "$KMKCHECK_FILE" 755
 report "$RESULT" "$KMKCHECK_FILE"
 
-# Install kmk (only if missing; delete ~/.local/bin/kmk to reinstall from Downloads)
-if [ -f "$LOCAL_BIN/kmk" ]; then
+# Install kmk as ~/.local/bin/kmk, whatever the download is called (only if missing;
+# delete ~/.local/bin/kmk to reinstall from Downloads)
+if [ "$KMK_SOURCE" = "$LOCAL_BIN/kmk" ]; then
     report unchanged "$LOCAL_BIN/kmk"
 else
-    install -m 0755 "$KMK_DOWNLOAD" "$LOCAL_BIN/kmk"
+    install -m 0755 "$KMK_SOURCE" "$LOCAL_BIN/kmk"
     report created "$LOCAL_BIN/kmk"
 fi
 
@@ -667,3 +803,4 @@ if [ "$BASHRC_RESULT" != "unchanged" ]; then
 fi
 printf '\nThen open a new WSL terminal and connect with: %sssh s%s or %sssh cluster%s\n' \
     "$C_BOLD" "$C_RESET" "$C_BOLD" "$C_RESET"
+printf 'The same commands work in PowerShell/CMD, once CertAgent holds a valid certificate.\n'

@@ -31,7 +31,6 @@ LOCAL_BIN="$HOME/.local/bin"
 SSH_DIR="$HOME/.ssh"
 SSH_CONFIG_FILE="$SSH_DIR/config"
 KMKCHECK_FILE="$LOCAL_BIN/kmkcheck"
-KMK_DOWNLOAD="$HOME/Downloads/kmk"
 KMK_URL="https://w.fys.kuleuven.be/public/deploy/$(uname -s)/kmk/kmk-$(uname -m)-latest"
 
 case "$(basename "${SHELL:-/bin/zsh}")" in
@@ -174,6 +173,25 @@ kmk_principals() {
     awk -F'"' '/^[[:space:]]*principals[[:space:]]*=/ { print $2; exit }' "$f"
 }
 
+# find_kmk <dir>...: print the kmk download to install, if any. Preferred: the download
+# for this CPU (kmk-<arch>-latest, incl. browser copies like 'kmk-x86_64-latest (1)'),
+# then a file already renamed to 'kmk', then any other kmk-* file. The newest file wins
+# within each of these. Partial downloads are skipped.
+find_kmk() {
+    local pattern dir f newest
+    for pattern in "kmk-$(uname -m)-latest*" "kmk" "kmk-*"; do
+        newest=""
+        for dir in "$@"; do
+            for f in "$dir"/$pattern; do
+                [ -f "$f" ] || continue
+                case "$f" in *.crdownload|*.part|*.download|*.tmp) continue ;; esac
+                if [ -z "$newest" ] || [ "$f" -nt "$newest" ]; then newest=$f; fi
+            done
+        done
+        if [ -n "$newest" ]; then printf '%s' "$newest"; return 0; fi
+    done
+}
+
 # binary_runs_here <file>: check a Mach-O binary matches this Mac's CPU.
 # Prints a reason and returns 1 if it cannot run; returns 2 if it needs Rosetta.
 binary_runs_here() {
@@ -237,18 +255,19 @@ else
     esac
 fi
 
-# kmk
+# kmk: installed, or downloaded in the Downloads folder (any name, see find_kmk)
 if [ -f "$LOCAL_BIN/kmk" ]; then
     KMK_SOURCE="$LOCAL_BIN/kmk"
     ok "kmk installed in $(pretty "$LOCAL_BIN")"
-elif [ -f "$KMK_DOWNLOAD" ]; then
-    KMK_SOURCE="$KMK_DOWNLOAD"
-    ok "kmk found in your Downloads folder"
 else
-    KMK_SOURCE=""
-    fail "kmk binary not found"
-    hint "Download the macOS version from $KMK_URL"
-    hint "and save it in your Downloads folder as 'kmk'."
+    KMK_SOURCE="$(find_kmk "$HOME/Downloads")"
+    if [ -n "$KMK_SOURCE" ]; then
+        ok "kmk found in your Downloads folder ($(basename "$KMK_SOURCE"))"
+    else
+        fail "kmk binary not found"
+        hint "Download the macOS version from $KMK_URL"
+        hint "and save it in your Downloads folder."
+    fi
 fi
 if [ -n "$KMK_SOURCE" ]; then
     arch_rc=0
@@ -317,11 +336,12 @@ chmod 700 "$SSH_DIR"
 
 
 ### <<< 2. Install kmk and helper script >>>
-# Install kmk (only if missing; delete ~/.local/bin/kmk to reinstall from Downloads)
+# Install kmk as ~/.local/bin/kmk, whatever the download is called (only if missing;
+# delete ~/.local/bin/kmk to reinstall from Downloads)
 if [ "$KMK_SOURCE" = "$LOCAL_BIN/kmk" ]; then
     report unchanged "$LOCAL_BIN/kmk"
 else
-    install -m 0755 "$KMK_DOWNLOAD" "$LOCAL_BIN/kmk"
+    install -m 0755 "$KMK_SOURCE" "$LOCAL_BIN/kmk"
     report created "$LOCAL_BIN/kmk"
 fi
 # Files downloaded with a browser are quarantined by Gatekeeper and refuse to run
