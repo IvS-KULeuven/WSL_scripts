@@ -1,7 +1,6 @@
 # IvS SSH setup scripts
 
-Setup scripts to connect to the Department of Physics servers (`s` and `cluster`) with your KU Leuven SSH
-certificate (MFA). There is one script per system:
+Setup scripts to connect to the Department of Physics servers (`s` and `cluster`). There is one script per system:
 
 | You work on | Script | Uses |
 |---|---|---|
